@@ -1,25 +1,3 @@
-// MIT License
-
-// Copyright (c) 2018 Andy Pan
-
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 package ants
 
 import (
@@ -105,6 +83,7 @@ func (p *Pool) purgeStaleWorkers() {
 
 		var isDormant bool
 		p.lock.Lock()
+		// clear stale work
 		staleWorkers := p.workers.refresh(p.options.ExpiryDuration)
 		n := p.Running()
 		isDormant = n == 0 || n == len(staleWorkers)
@@ -172,6 +151,7 @@ func (p *Pool) nowTime() time.Time {
 }
 
 // NewPool instantiates a Pool with customized options.
+// 默认用的就是这种方式创建 size为 int32
 func NewPool(size int, options ...Option) (*Pool, error) {
 	if size <= 0 {
 		size = -1
@@ -194,16 +174,18 @@ func NewPool(size int, options ...Option) (*Pool, error) {
 	p := &Pool{poolCommon: poolCommon{
 		capacity: int32(size),
 		allDone:  make(chan struct{}),
-		lock:     syncx.NewSpinLock(),
+		lock:     syncx.NewSpinLock(), // 设置一个自旋锁
 		once:     &sync.Once{},
 		options:  opts,
 	}}
+	// 设置对象池的创建函数
 	p.workerCache.New = func() interface{} {
 		return &goWorker{
 			pool: p,
 			task: make(chan func(), workerChanCap),
 		}
 	}
+	// 如果允许提前分配内存使用循环队列的workers 否则使用栈workers
 	if p.options.PreAlloc {
 		if size == -1 {
 			return nil, ErrInvalidPreAllocSize
@@ -232,9 +214,9 @@ func (p *Pool) Submit(task func()) error {
 		return ErrPoolClosed
 	}
 
-	w, err := p.retrieveWorker()
+	w, err := p.retrieveWorker() // 获取一个worker
 	if w != nil {
-		w.inputFunc(task)
+		w.inputFunc(task) // worker insert task
 	}
 	return err
 }
@@ -424,11 +406,12 @@ func (p *Pool) revertWorker(worker *goWorker) bool {
 		p.lock.Unlock()
 		return false
 	}
+	// 重新塞入队列
 	if err := p.workers.insert(worker); err != nil {
 		p.lock.Unlock()
 		return false
 	}
-	// Notify the invoker stuck in 'retrieveWorker()' of there is an available worker in the worker queue.
+	// Notify the invoker stuck in 'retrieveWorker()' of there is an available worker in the worker queue. 通知一个等待使用worker的 goroutine 有一个可以使用了
 	p.cond.Signal()
 	p.lock.Unlock()
 

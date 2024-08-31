@@ -5,6 +5,7 @@ import "time"
 // Option represents the optional function.
 type Option func(opts *Options)
 
+// 执行参数赋值到一个 options对象上并返回
 func loadOptions(options ...Option) *Options {
 	opts := new(Options)
 	for _, option := range options {

@@ -32,9 +32,9 @@ func (wq *workerStack) detach() worker {
 		return nil
 	}
 
-	w := wq.items[l-1]
-	wq.items[l-1] = nil // avoid memory leaks
-	wq.items = wq.items[:l-1]
+	w := wq.items[l-1]        // get  last one
+	wq.items[l-1] = nil       // avoid memory leaks
+	wq.items = wq.items[:l-1] // remove last one
 
 	return w
 }
@@ -48,10 +48,11 @@ func (wq *workerStack) refresh(duration time.Duration) []worker {
 	expiryTime := time.Now().Add(-duration)
 	index := wq.binarySearch(0, n-1, expiryTime)
 
-	wq.expiry = wq.expiry[:0]
+	wq.expiry = wq.expiry[:0] // 复用expiry的切片内存并置空
 	if index != -1 {
 		wq.expiry = append(wq.expiry, wq.items[:index+1]...)
 		m := copy(wq.items, wq.items[index+1:])
+		// 将没有用到的内存置空 avoid memory leak
 		for i := m; i < n; i++ {
 			wq.items[i] = nil
 		}
@@ -60,6 +61,7 @@ func (wq *workerStack) refresh(duration time.Duration) []worker {
 	return wq.expiry
 }
 
+// 二分查找最后一个过期的index
 func (wq *workerStack) binarySearch(l, r int, expiryTime time.Time) int {
 	for l <= r {
 		mid := l + ((r - l) >> 1) // avoid overflow when computing mid
@@ -72,6 +74,7 @@ func (wq *workerStack) binarySearch(l, r int, expiryTime time.Time) int {
 	return r
 }
 
+// clear every items
 func (wq *workerStack) reset() {
 	for i := 0; i < wq.len(); i++ {
 		wq.items[i].finish()
